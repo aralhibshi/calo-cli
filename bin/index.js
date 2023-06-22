@@ -3,6 +3,8 @@ const chalk = require('chalk')
 const boxen = require('boxen')
 const yargs = require("yargs")
 const axios = require('axios')
+const request = require('request')
+const fs = require('fs')
 
 const options = yargs
     .usage("Usage: -topics <name>")
@@ -10,14 +12,19 @@ const options = yargs
     .option('o', {alias: 'orientation', describe: "Orientation for API", type: 'string', demandOption: true})
     .argv
 
-const greeting = chalk.white.bold('Fetching ')
-
 const boxenOptions = {
     borderStyle: "round",
     borderColor: "red",
 }
 
-const message = boxen(greeting + options.orientation + options.topics, boxenOptions)
+const greeting = chalk.white.bold('Fetching Image with ')
+const msg = {
+    topics: `Topic(s) = ${options.topics}, `,
+    orientation: `Orientation = ${options.orientation}`,
+}
+
+const message = boxen(greeting + msg.topics + msg.orientation, boxenOptions)
+console.log(message)
 
 // Unsplash API
 axios({
@@ -25,18 +32,52 @@ axios({
     url: `https://api.unsplash.com/photos/random?client_id=37D9BsnU_1ahCimTYclz0avae5YYabiQaORYheTC4wU&client_secret=_EDr8nUS2Z96_nf--bFj_HSEWMwSbpiu7hDF2Rg4nLM&count=1&topics=${options.topics}&orientation=${options.orientation}`
 })
 .then(res => {
-    console.log(res.data[0].urls.full)
+    const imageURL = res.data[0].urls.full
+    console.log('Response: ', imageURL)
 
-    async function saveImage(src, name) {
-        const imgSrc = await fetch(src)
-        const blob = await imgSrc.blob()
+    const outputFolder = 'images'
+    let counter = 0
+
+    if (!fs.existsSync(outputFolder)) {
+        fs.mkdirSync(outputFolder)
+    } else {
+
+    // Get List of Files in Folder and Find Highest Counter Number
+    const files = fs.readdirSync(outputFolder)
+
+    files.forEach(file => {
+        const fileName = file.split('.')[0]
+        const fileCounter = fileName.split('-').pop()
+        if (!isNaN(fileCounter)) {
+        if (Number(fileCounter) >= counter) {
+            counter = Number(fileCounter) + 1
+        }
+        }
+    })
     }
 
-    saveImage(res.data[0].urls.full, 'image.png')
+    // Download Image
+    request.get(imageURL, {encoding: 'binary'}, (error, res, body) => {
+        if (!error && res.statusCode == 200) {
+
+            // Extract Fle Extension from 'Content-Type' Header
+            const contentType = res.headers['content-type']
+            const fileExtension = contentType.split('/').pop()
+
+            // Save Image with Unique Name
+            let outputFilename = `image-${counter}.${fileExtension}`
+
+            while (fs.existsSync(`${outputFolder}/${outputFilename}`)) {
+                counter++
+                outputFilename = `your-image-${counter}.${fileExtension}`
+            }
+            fs.writeFile(`${outputFolder}/${outputFilename}`, body, 'binary', (err) => {  
+                if (err) throw err
+                console.log(`Image saved as ${outputFilename}`)
+            })
+        }
+    })
 })
 .catch(err => {
     console.log(err)
-    console.log('Error Fetching API Data')
 })
-
-console.log(message);
